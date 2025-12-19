@@ -81,6 +81,24 @@ tail -f logs/ems22d.log
 ### Testing
 
 ```bash
+# Run all unit tests
+uv run pytest
+
+# Run tests with verbose output
+uv run pytest -v --tb=short
+
+# Run a specific test file
+uv run pytest tests/test_angle_utils.py
+
+# Run a specific test class
+uv run pytest tests/test_adaptive_tracking.py::TestDecideMode
+
+# Run a single test
+uv run pytest tests/test_moteur.py::TestMoteurCoupoleControl::test_rotation_calcul_steps
+
+# Run tests without heavy dependencies (quick validation)
+uv run pytest tests/test_angle_utils.py tests/test_config.py tests/test_moteur.py tests/test_feedback_controller.py
+
 # Test motor speeds and microstepping configuration
 python tests/test_motor_speeds.py
 
@@ -93,6 +111,16 @@ python tests_sur_site/ems22a_ring_gauge4_V2.py
 # Test direct du switch de calibration (GPIO 27)
 sudo python3 tests_sur_site/test_switch_direct.py
 ```
+
+**Test Suite Structure** (`tests/`):
+- `test_angle_utils.py`: Angle normalization, shortest path calculations
+- `test_config.py`: Configuration loading and defaults
+- `test_calculations.py`: Astronomical calculations (requires astropy)
+- `test_abaque_manager.py`: Lookup table interpolation
+- `test_adaptive_tracking.py`: Mode selection logic
+- `test_moteur.py`: Motor control with GPIO mocks
+- `test_feedback_controller.py`: Closed-loop feedback logic
+- `test_tracker.py`: Session management integration
 
 ### Field Tests
 
