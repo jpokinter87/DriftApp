@@ -33,6 +33,13 @@ class MovementState:
     duration_sec: float
 
 
+# Configuration du switch de calibration (correspond au daemon réel)
+SWITCH_CALIB_ANGLE = 45.0  # Angle où le switch se déclenche
+SWITCH_TOLERANCE = 0.5     # Tolérance pour détecter le passage
+CALIBRATION_FACTOR = 0.01077 / 0.9925  # Facteur du daemon réel
+COUNTS_PER_REV = 1024      # Counts par tour encodeur
+
+
 class MovementSimulator:
     """
     Simule le mouvement du moteur avec timing réaliste.
@@ -72,11 +79,104 @@ class MovementSimulator:
         # Steps per revolution (sera mis à jour par MoteurSimule)
         self._steps_per_revolution = 1941866
 
+        # Simulation encodeur réaliste
+        self._total_counts: int = 0  # Compteur incrémental (comme daemon réel)
+        self._calibrated: bool = False  # Flag: True après passage sur switch
+        self._last_position: float = 0.0  # Pour détecter passage sur 45°
+        self._switch_callback: Optional[callable] = None  # Callback switch
+
         self.logger.debug("MovementSimulator initialisé")
 
     def set_steps_per_revolution(self, steps: int):
         """Configure le nombre de pas par révolution."""
         self._steps_per_revolution = steps
+
+    def set_switch_callback(self, callback: callable):
+        """
+        Définit un callback appelé quand le switch de calibration est déclenché.
+
+        Le callback reçoit l'angle de calibration (45°).
+        """
+        self._switch_callback = callback
+
+    def _check_switch_crossing(self, old_pos: float, new_pos: float) -> bool:
+        """
+        Vérifie si la position a traversé l'angle du switch (45°).
+
+        Simule le comportement du microswitch SS-5GL sur GPIO 27.
+        Retourne True si le switch a été activé.
+        """
+        # Normaliser les positions
+        old_pos = old_pos % 360
+        new_pos = new_pos % 360
+
+        switch_angle = SWITCH_CALIB_ANGLE
+
+        # Vérifier si on traverse 45° dans un sens ou l'autre
+        crossed = False
+
+        # Mouvement positif (sens horaire)
+        if old_pos < new_pos:
+            crossed = old_pos < switch_angle <= new_pos
+        # Mouvement négatif (sens anti-horaire)
+        elif old_pos > new_pos:
+            crossed = new_pos <= switch_angle < old_pos
+        # Cas spécial : traversée de 0°
+        else:
+            # Pas de mouvement
+            pass
+
+        # Cas spécial: mouvement qui traverse 0° (ex: 350° → 10°)
+        if not crossed:
+            if old_pos > 300 and new_pos < 60:
+                # Mouvement positif traversant 0°
+                crossed = old_pos < switch_angle or new_pos >= switch_angle
+            elif old_pos < 60 and new_pos > 300:
+                # Mouvement négatif traversant 0°
+                crossed = old_pos >= switch_angle or new_pos < switch_angle
+
+        if crossed and not self._calibrated:
+            self._calibrated = True
+            self.logger.info(f"🔄 Switch calibration simulé → recalage à {switch_angle}°")
+
+            # Recalculer total_counts pour correspondre à 45° (comme daemon réel)
+            target_wheel_deg = switch_angle / (CALIBRATION_FACTOR * -1)
+            self._total_counts = int((target_wheel_deg / 360.0) * COUNTS_PER_REV)
+
+            if self._switch_callback:
+                self._switch_callback(switch_angle)
+
+            return True
+
+        return False
+
+    @property
+    def is_calibrated(self) -> bool:
+        """Retourne True si le switch a été activé au moins une fois."""
+        return self._calibrated
+
+    def reset_calibration(self):
+        """Réinitialise l'état de calibration (pour tests)."""
+        self._calibrated = False
+        self._total_counts = 0
+
+    def get_raw_encoder_value(self) -> int:
+        """
+        Retourne une valeur brute simulée de l'encodeur (0-1023).
+
+        Simule le comportement du EMS22A 10-bit.
+        """
+        # Calculer la valeur raw à partir de la position
+        # La formule inverse de raw_to_calibrated du daemon
+        position = self.get_current_position()
+
+        # Calculer le nombre de tours de roue correspondant
+        wheel_deg = position / (CALIBRATION_FACTOR * -1)  # ROTATION_SIGN = -1
+
+        # Calculer raw (position dans le tour actuel)
+        raw = int((wheel_deg / 360.0) * COUNTS_PER_REV) % COUNTS_PER_REV
+
+        return raw
 
     def calculate_speed_from_delay(self, motor_delay: float) -> float:
         """
@@ -184,8 +284,14 @@ class MovementSimulator:
 
         if elapsed >= mv.duration_sec:
             # Mouvement terminé
+            old_pos = self._last_position
             self._position = mv.target_position
             self._current_movement = None
+
+            # Vérifier passage sur switch de calibration
+            self._check_switch_crossing(old_pos, self._position)
+            self._last_position = self._position
+
             return self._position
 
         # Interpolation linéaire
@@ -194,6 +300,11 @@ class MovementSimulator:
         direction = 1 if mv.delta >= 0 else -1
 
         current = (mv.start_position + direction * distance_traveled) % 360
+
+        # Vérifier passage sur switch pendant le mouvement
+        self._check_switch_crossing(self._last_position, current)
+        self._last_position = current
+
         return current
 
     def get_current_position(self) -> float:
@@ -252,8 +363,13 @@ class MovementSimulator:
         Arrête tout mouvement en cours.
         """
         with self._movement_lock:
+            old_pos = self._position
             self._current_movement = None
             self._position = position % 360
+
+            # Vérifier passage sur switch
+            self._check_switch_crossing(old_pos, self._position)
+            self._last_position = self._position
 
     def wait_for_completion(self, timeout: float = None) -> bool:
         """
@@ -553,6 +669,11 @@ class SimulatedDaemonReader:
 
     En mode simulation, lit la position depuis MovementSimulator
     au lieu du fichier /dev/shm/ems22_position.json.
+
+    Simule également:
+    - Le flag 'calibrated' (True après passage sur switch à 45°)
+    - La valeur 'raw' de l'encodeur EMS22A (0-1023)
+    - Le comportement du switch de calibration SS-5GL
     """
 
     def __init__(self):
@@ -564,12 +685,18 @@ class SimulatedDaemonReader:
         return True
 
     def read_raw(self) -> dict:
-        """Retourne un statut simulé."""
+        """
+        Retourne un statut simulé réaliste.
+
+        Le flag 'calibrated' devient True après le premier passage
+        sur l'azimut 45° (simulation du microswitch SS-5GL).
+        """
         return {
             'angle': self._simulator.get_current_position(),
-            'calibrated': True,
+            'calibrated': self._simulator.is_calibrated,
             'status': 'OK (simulation)',
-            'raw': 0
+            'raw': self._simulator.get_raw_encoder_value(),
+            'ts': time.time()
         }
 
     def read_angle(self, timeout_ms: int = 200) -> float:
@@ -584,3 +711,7 @@ class SimulatedDaemonReader:
                     stabilization_ms: int = 50) -> float:
         """Retourne la position simulée (pas de moyennage nécessaire)."""
         return self.read_angle()
+
+    def is_calibrated(self) -> bool:
+        """Retourne True si le switch de calibration a été activé."""
+        return self._simulator.is_calibrated
