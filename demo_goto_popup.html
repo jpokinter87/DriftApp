@@ -1,0 +1,653 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Démo GOTO Popup - DriftApp</title>
+    <style>
+        :root {
+            --bg-primary: #1a1a2e;
+            --bg-secondary: #16213e;
+            --bg-card: #0f3460;
+            --accent: #e94560;
+            --accent-glow: rgba(233, 69, 96, 0.3);
+            --text-primary: #eee;
+            --text-secondary: #aaa;
+            --success: #00d26a;
+            --warning: #ffc107;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, var(--bg-primary) 0%, var(--bg-secondary) 100%);
+            color: var(--text-primary);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+            color: var(--accent);
+        }
+
+        .demo-controls {
+            max-width: 600px;
+            margin: 0 auto 30px;
+            padding: 20px;
+            background: var(--bg-card);
+            border-radius: 12px;
+        }
+
+        .demo-controls h2 {
+            margin-bottom: 15px;
+            font-size: 1.2em;
+        }
+
+        .control-row {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 15px;
+            align-items: center;
+        }
+
+        .control-row label {
+            min-width: 140px;
+        }
+
+        input[type="number"] {
+            width: 100px;
+            padding: 8px;
+            border: 1px solid #444;
+            border-radius: 6px;
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+        }
+
+        button {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.3s;
+        }
+
+        .btn-cw {
+            background: linear-gradient(135deg, #00d26a, #00a854);
+            color: white;
+        }
+
+        .btn-ccw {
+            background: linear-gradient(135deg, #ffc107, #ff9800);
+            color: #333;
+        }
+
+        .btn-stop {
+            background: linear-gradient(135deg, #e94560, #c73e54);
+            color: white;
+        }
+
+        button:hover {
+            transform: scale(1.05);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+        }
+
+        .buttons-row {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            margin-top: 20px;
+        }
+
+        /* Modal Overlay */
+        .goto-modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+            backdrop-filter: blur(5px);
+        }
+
+        .goto-modal-overlay.active {
+            display: flex;
+        }
+
+        /* Modal Content */
+        .goto-modal {
+            background: linear-gradient(145deg, var(--bg-card) 0%, var(--bg-secondary) 100%);
+            border-radius: 16px;
+            padding: 30px;
+            min-width: 400px;
+            max-width: 500px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5),
+                        0 0 40px var(--accent-glow);
+            border: 1px solid rgba(233, 69, 96, 0.3);
+            animation: modalSlideIn 0.3s ease-out;
+        }
+
+        @keyframes modalSlideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-30px) scale(0.95);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+            }
+        }
+
+        .goto-modal h3 {
+            text-align: center;
+            margin-bottom: 25px;
+            font-size: 1.4em;
+            color: var(--accent);
+        }
+
+        .goto-modal h3 .icon {
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        /* Position Display */
+        .goto-positions {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 25px;
+            padding: 15px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 10px;
+        }
+
+        .position-box {
+            text-align: center;
+        }
+
+        .position-label {
+            font-size: 0.8em;
+            color: var(--text-secondary);
+            margin-bottom: 5px;
+        }
+
+        .position-value {
+            font-size: 1.8em;
+            font-weight: bold;
+            font-family: 'Courier New', monospace;
+        }
+
+        .position-value.current {
+            color: var(--warning);
+        }
+
+        .position-value.target {
+            color: var(--success);
+        }
+
+        .position-arrow {
+            font-size: 2em;
+            color: var(--accent);
+            animation: arrowPulse 1s ease-in-out infinite;
+        }
+
+        .position-arrow.cw {
+            color: var(--success);
+        }
+
+        .position-arrow.ccw {
+            color: var(--warning);
+        }
+
+        @keyframes arrowPulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.2); }
+        }
+
+        /* Delta Display */
+        .goto-delta {
+            text-align: center;
+            margin-bottom: 20px;
+            padding: 12px;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 8px;
+        }
+
+        .delta-value {
+            font-size: 1.3em;
+            font-weight: bold;
+            font-family: 'Courier New', monospace;
+        }
+
+        .delta-value.positive {
+            color: var(--success);
+        }
+
+        .delta-value.negative {
+            color: var(--warning);
+        }
+
+        .delta-direction {
+            font-size: 0.9em;
+            color: var(--text-secondary);
+            margin-top: 5px;
+        }
+
+        /* Progress Bar */
+        .goto-progress-container {
+            margin-bottom: 20px;
+        }
+
+        .goto-progress-bar {
+            height: 12px;
+            background: rgba(0, 0, 0, 0.4);
+            border-radius: 6px;
+            overflow: hidden;
+        }
+
+        .goto-progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--accent), var(--success));
+            border-radius: 6px;
+            transition: width 0.1s linear;
+            position: relative;
+        }
+
+        .goto-progress-fill::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+            animation: shimmer 1.5s infinite;
+        }
+
+        @keyframes shimmer {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(100%); }
+        }
+
+        .goto-progress-text {
+            text-align: center;
+            margin-top: 8px;
+            font-size: 0.9em;
+            color: var(--text-secondary);
+        }
+
+        /* Time Remaining */
+        .goto-time {
+            text-align: center;
+            font-size: 1.1em;
+            color: var(--text-secondary);
+        }
+
+        .goto-time .time-value {
+            font-weight: bold;
+            color: var(--text-primary);
+        }
+
+        /* Info Panel (outside modal) */
+        .info-panel {
+            max-width: 600px;
+            margin: 30px auto;
+            padding: 20px;
+            background: var(--bg-card);
+            border-radius: 12px;
+        }
+
+        .info-panel h3 {
+            margin-bottom: 15px;
+            color: var(--accent);
+        }
+
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .info-row:last-child {
+            border-bottom: none;
+        }
+
+        /* Compass visualization */
+        .compass-container {
+            width: 200px;
+            height: 200px;
+            margin: 20px auto;
+            position: relative;
+        }
+
+        .compass {
+            width: 100%;
+            height: 100%;
+            border: 3px solid var(--accent);
+            border-radius: 50%;
+            position: relative;
+            background: radial-gradient(circle, var(--bg-secondary) 0%, var(--bg-primary) 100%);
+        }
+
+        .compass::before {
+            content: 'N';
+            position: absolute;
+            top: 5px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: var(--accent);
+            font-weight: bold;
+        }
+
+        .compass-needle {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 4px;
+            height: 80px;
+            background: linear-gradient(to top, var(--accent) 0%, var(--warning) 100%);
+            transform-origin: bottom center;
+            transform: translateX(-50%) rotate(0deg);
+            border-radius: 2px;
+            transition: transform 0.1s linear;
+        }
+
+        .compass-target {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 3px;
+            height: 80px;
+            background: var(--success);
+            opacity: 0.5;
+            transform-origin: bottom center;
+            transform: translateX(-50%) rotate(0deg);
+            border-radius: 2px;
+        }
+
+        .compass-center {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 12px;
+            height: 12px;
+            background: var(--accent);
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+        }
+    </style>
+</head>
+<body>
+    <h1>🔭 Démo Popup GOTO Initial - DriftApp</h1>
+
+    <div class="demo-controls">
+        <h2>Configuration du mouvement</h2>
+        <div class="control-row">
+            <label>Position actuelle (°):</label>
+            <input type="number" id="currentPos" value="45" min="0" max="359" step="0.1">
+        </div>
+        <div class="control-row">
+            <label>Position cible (°):</label>
+            <input type="number" id="targetPos" value="258" min="0" max="359" step="0.1">
+        </div>
+        <div class="control-row">
+            <label>Vitesse (°/min):</label>
+            <input type="number" id="speed" value="41" min="1" max="100" step="1">
+        </div>
+
+        <div class="buttons-row">
+            <button class="btn-cw" onclick="startDemo('auto')">▶ Démarrer GOTO</button>
+            <button class="btn-stop" onclick="stopDemo()">⏹ Arrêter</button>
+        </div>
+
+        <div class="buttons-row" style="margin-top: 10px;">
+            <button class="btn-cw" onclick="setPreset('cw')">Préset CW (45° → 258°)</button>
+            <button class="btn-ccw" onclick="setPreset('ccw')">Préset CCW (258° → 45°)</button>
+        </div>
+    </div>
+
+    <!-- Compass visualization -->
+    <div class="compass-container">
+        <div class="compass">
+            <div class="compass-target" id="compassTarget"></div>
+            <div class="compass-needle" id="compassNeedle"></div>
+            <div class="compass-center"></div>
+        </div>
+    </div>
+
+    <!-- Info Panel -->
+    <div class="info-panel">
+        <h3>📊 État actuel</h3>
+        <div class="info-row">
+            <span>Position encodeur:</span>
+            <span id="infoPosition">45.0°</span>
+        </div>
+        <div class="info-row">
+            <span>État:</span>
+            <span id="infoStatus">Arrêté</span>
+        </div>
+        <div class="info-row">
+            <span>Direction:</span>
+            <span id="infoDirection">-</span>
+        </div>
+        <div class="info-row">
+            <span>Temps écoulé:</span>
+            <span id="infoElapsed">0s</span>
+        </div>
+    </div>
+
+    <!-- GOTO Modal Overlay -->
+    <div class="goto-modal-overlay" id="gotoModal">
+        <div class="goto-modal">
+            <h3><span class="icon">🎯</span> GOTO Initial en cours...</h3>
+
+            <div class="goto-positions">
+                <div class="position-box">
+                    <div class="position-label">Position actuelle</div>
+                    <div class="position-value current" id="modalCurrentPos">45.0°</div>
+                </div>
+                <div class="position-arrow" id="modalArrow">→</div>
+                <div class="position-box">
+                    <div class="position-label">Position cible</div>
+                    <div class="position-value target" id="modalTargetPos">258.6°</div>
+                </div>
+            </div>
+
+            <div class="goto-delta">
+                <div class="delta-value" id="modalDelta">Δ = -146.4°</div>
+                <div class="delta-direction" id="modalDirection">Sens anti-horaire (CCW)</div>
+            </div>
+
+            <div class="goto-progress-container">
+                <div class="goto-progress-bar">
+                    <div class="goto-progress-fill" id="modalProgress" style="width: 0%"></div>
+                </div>
+                <div class="goto-progress-text" id="modalProgressText">0%</div>
+            </div>
+
+            <div class="goto-time">
+                Temps restant: <span class="time-value" id="modalTimeRemaining">~3min 34s</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Configuration
+        const CONTINUOUS_SPEED_DEG_PER_SEC = 41.0 / 60; // ~0.683°/s par défaut
+
+        // État
+        let isRunning = false;
+        let animationFrame = null;
+        let startTime = null;
+        let startPosition = 0;
+        let targetPosition = 0;
+        let delta = 0;
+        let speedDegPerSec = CONTINUOUS_SPEED_DEG_PER_SEC;
+
+        function setPreset(type) {
+            if (type === 'cw') {
+                document.getElementById('currentPos').value = 45;
+                document.getElementById('targetPos').value = 258;
+            } else {
+                document.getElementById('currentPos').value = 258;
+                document.getElementById('targetPos').value = 45;
+            }
+        }
+
+        function shortestAngularDistance(current, target) {
+            let delta = target - current;
+            while (delta > 180) delta -= 360;
+            while (delta < -180) delta += 360;
+            return delta;
+        }
+
+        function normalizeAngle(angle) {
+            return ((angle % 360) + 360) % 360;
+        }
+
+        function formatTime(seconds) {
+            if (seconds < 60) {
+                return `${Math.round(seconds)}s`;
+            }
+            const mins = Math.floor(seconds / 60);
+            const secs = Math.round(seconds % 60);
+            return `~${mins}min ${secs}s`;
+        }
+
+        function updateCompass(currentAngle, targetAngle) {
+            const needle = document.getElementById('compassNeedle');
+            const target = document.getElementById('compassTarget');
+
+            // En boussole, 0° est en haut (Nord), donc on n'ajoute pas de rotation
+            needle.style.transform = `translateX(-50%) rotate(${currentAngle}deg)`;
+            target.style.transform = `translateX(-50%) rotate(${targetAngle}deg)`;
+        }
+
+        function startDemo(mode) {
+            if (isRunning) return;
+
+            // Lire les valeurs
+            startPosition = parseFloat(document.getElementById('currentPos').value);
+            targetPosition = parseFloat(document.getElementById('targetPos').value);
+            const speedDegPerMin = parseFloat(document.getElementById('speed').value);
+            speedDegPerSec = speedDegPerMin / 60;
+
+            // Calculer le delta (chemin le plus court)
+            delta = shortestAngularDistance(startPosition, targetPosition);
+
+            // Afficher le modal
+            const modal = document.getElementById('gotoModal');
+            modal.classList.add('active');
+
+            // Initialiser l'affichage
+            document.getElementById('modalTargetPos').textContent = `${targetPosition.toFixed(1)}°`;
+
+            const deltaDisplay = document.getElementById('modalDelta');
+            const directionDisplay = document.getElementById('modalDirection');
+            const arrow = document.getElementById('modalArrow');
+
+            if (delta >= 0) {
+                deltaDisplay.textContent = `Δ = +${delta.toFixed(1)}°`;
+                deltaDisplay.className = 'delta-value positive';
+                directionDisplay.textContent = 'Sens horaire (CW) ↻';
+                arrow.textContent = '→';
+                arrow.className = 'position-arrow cw';
+            } else {
+                deltaDisplay.textContent = `Δ = ${delta.toFixed(1)}°`;
+                deltaDisplay.className = 'delta-value negative';
+                directionDisplay.textContent = 'Sens anti-horaire (CCW) ↺';
+                arrow.textContent = '←';
+                arrow.className = 'position-arrow ccw';
+            }
+
+            // Démarrer l'animation
+            isRunning = true;
+            startTime = Date.now();
+            animate();
+        }
+
+        function stopDemo() {
+            isRunning = false;
+            if (animationFrame) {
+                cancelAnimationFrame(animationFrame);
+                animationFrame = null;
+            }
+
+            const modal = document.getElementById('gotoModal');
+            modal.classList.remove('active');
+
+            document.getElementById('infoStatus').textContent = 'Arrêté';
+            document.getElementById('infoDirection').textContent = '-';
+        }
+
+        function animate() {
+            if (!isRunning) return;
+
+            const elapsed = (Date.now() - startTime) / 1000; // en secondes
+            const totalDistance = Math.abs(delta);
+            const duration = totalDistance / speedDegPerSec;
+
+            // Calculer la progression
+            const progress = Math.min(elapsed / duration, 1);
+            const distanceTraveled = totalDistance * progress;
+            const direction = delta >= 0 ? 1 : -1;
+
+            // Position actuelle interpolée
+            let currentPos = startPosition + (direction * distanceTraveled);
+            currentPos = normalizeAngle(currentPos);
+
+            // Mettre à jour l'affichage modal
+            document.getElementById('modalCurrentPos').textContent = `${currentPos.toFixed(1)}°`;
+            document.getElementById('modalProgress').style.width = `${progress * 100}%`;
+            document.getElementById('modalProgressText').textContent = `${(progress * 100).toFixed(0)}%`;
+
+            const remaining = duration - elapsed;
+            if (remaining > 0) {
+                document.getElementById('modalTimeRemaining').textContent = formatTime(remaining);
+            } else {
+                document.getElementById('modalTimeRemaining').textContent = 'Terminé!';
+            }
+
+            // Mettre à jour le panneau d'info
+            document.getElementById('infoPosition').textContent = `${currentPos.toFixed(1)}°`;
+            document.getElementById('infoStatus').textContent = 'GOTO en cours...';
+            document.getElementById('infoDirection').textContent = delta >= 0 ? 'CW (horaire)' : 'CCW (anti-horaire)';
+            document.getElementById('infoElapsed').textContent = `${elapsed.toFixed(1)}s`;
+
+            // Mettre à jour la boussole
+            updateCompass(currentPos, targetPosition);
+
+            // Vérifier si terminé
+            if (progress >= 1) {
+                setTimeout(() => {
+                    stopDemo();
+                    document.getElementById('infoStatus').textContent = 'GOTO terminé ✓';
+                    document.getElementById('currentPos').value = targetPosition.toFixed(1);
+                }, 500);
+                return;
+            }
+
+            animationFrame = requestAnimationFrame(animate);
+        }
+
+        // Initialiser la boussole
+        updateCompass(45, 258);
+    </script>
+</body>
+</html>
