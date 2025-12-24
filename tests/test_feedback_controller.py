@@ -206,7 +206,8 @@ class TestRotationAvecFeedback:
     ):
         """Rotation nécessitant des corrections."""
         # Position initiale 0°, puis 45° après correction, puis 90° (cible)
-        positions = [0.0, 0.0, 45.0, 45.0, 90.0]
+        # Fournir suffisamment de valeurs pour toutes les lectures
+        positions = [0.0, 0.0, 45.0, 45.0, 90.0, 90.0, 90.0, 90.0, 90.0, 90.0]
         mock_daemon_reader.read_stable.side_effect = positions
 
         result = feedback_controller.rotation_avec_feedback(
